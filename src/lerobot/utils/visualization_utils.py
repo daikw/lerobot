@@ -38,8 +38,9 @@ def init_rerun(session_name: str = "lerobot_control_loop") -> None:
 
     connect_addr = os.getenv("LEROBOT_RERUN_CONNECT")
     if connect_addr:
-        # Headless mode: do not spawn a local viewer; connect to remote viewer instead.
-        rr.connect(connect_addr)
+        # Headless mode: do not spawn a local viewer; connect to a remote Rerun server/viewer via gRPC.
+        # See: https://ref.rerun.io/docs/python/0.26.0/common/initialization_functions/#rerun.connect_grpc
+        rr.connect_grpc(connect_addr)
     else:
         # Default behavior: spawn a local viewer.
         memory_limit = os.getenv("LEROBOT_RERUN_MEMORY_LIMIT", "10%")
