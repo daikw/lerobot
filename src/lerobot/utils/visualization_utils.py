@@ -23,12 +23,27 @@ from .constants import OBS_PREFIX, OBS_STR
 
 
 def init_rerun(session_name: str = "lerobot_control_loop") -> None:
-    """Initializes the Rerun SDK for visualizing the control loop."""
+    """Initializes the Rerun SDK for visualizing the control loop.
+
+    Behavior can be controlled via environment variables:
+    - LEROBOT_RERUN_CONNECT: if set to "host:port", connect to an already running
+      Rerun Viewer at that address instead of spawning a local viewer.
+    - LEROBOT_RERUN_MEMORY_LIMIT: passed to rr.spawn(memory_limit=...), defaults to "10%".
+    - RERUN_FLUSH_NUM_BYTES: forwarded to the SDK to control flush batching, defaults to "8000".
+    """
     batch_size = os.getenv("RERUN_FLUSH_NUM_BYTES", "8000")
     os.environ["RERUN_FLUSH_NUM_BYTES"] = batch_size
+
     rr.init(session_name)
-    memory_limit = os.getenv("LEROBOT_RERUN_MEMORY_LIMIT", "10%")
-    rr.spawn(memory_limit=memory_limit)
+
+    connect_addr = os.getenv("LEROBOT_RERUN_CONNECT")
+    if connect_addr:
+        # Headless mode: do not spawn a local viewer; connect to remote viewer instead.
+        rr.connect(connect_addr)
+    else:
+        # Default behavior: spawn a local viewer.
+        memory_limit = os.getenv("LEROBOT_RERUN_MEMORY_LIMIT", "10%")
+        rr.spawn(memory_limit=memory_limit)
 
 
 def _is_scalar(x):

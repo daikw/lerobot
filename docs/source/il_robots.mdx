@@ -150,6 +150,28 @@ while True:
 </hfoption>
 </hfoptions>
 
+### Headless Rerun (remote viewer)
+
+If you want to run without opening a local Rerun window and instead stream to a viewer on another machine in the same network:
+
+- On the viewer machine:
+
+```bash
+rerun viewer --host 0.0.0.0 --port 9876
+```
+
+- On the teleop/recording machine (replace with the viewer's IP):
+
+```bash
+export LEROBOT_RERUN_CONNECT=192.168.1.20:9876
+```
+
+Then run your usual commands with `--display_data=true` (e.g., `lerobot-teleoperate` or `lerobot-record`). To revert to spawning a local viewer, unset the variable:
+
+```bash
+unset LEROBOT_RERUN_CONNECT
+```
+
 ## Record a dataset
 
 Once you're familiar with teleoperation, you can record your first dataset.
