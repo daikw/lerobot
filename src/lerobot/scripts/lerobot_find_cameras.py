@@ -30,6 +30,7 @@ lerobot-find-cameras
 import argparse
 import concurrent.futures
 import logging
+import os
 import time
 from pathlib import Path
 from typing import Any
@@ -86,6 +87,47 @@ def find_all_realsense_cameras() -> list[dict[str, Any]]:
         logger.error(f"Error finding RealSense cameras: {e}")
 
     return all_realsense_cameras_info
+
+
+def deduplicate_cameras(cameras_info: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """
+    Remove duplicate cameras by resolving symlinks and keeping named symlinks over numeric paths.
+
+    On Linux, /dev/video_side might be a symlink to /dev/video4. This function
+    keeps the symlink path and removes the numeric path to avoid opening the
+    same physical camera twice.
+    """
+    if not cameras_info:
+        return cameras_info
+
+    # Map resolved paths to camera info, preferring symlinks over numeric paths
+    resolved_to_camera: dict[str, dict[str, Any]] = {}
+
+    for cam in cameras_info:
+        cam_id = cam.get("id")
+        if cam_id is None or cam.get("type") != "OpenCV":
+            # Non-OpenCV cameras (e.g., RealSense) are kept as-is
+            resolved_to_camera[str(cam_id)] = cam
+            continue
+
+        # Resolve symlink to get the real device path
+        try:
+            resolved_path = os.path.realpath(str(cam_id))
+        except OSError:
+            resolved_path = str(cam_id)
+
+        if resolved_path in resolved_to_camera:
+            existing = resolved_to_camera[resolved_path]
+            existing_id = str(existing.get("id", ""))
+            current_id = str(cam_id)
+            # Prefer symlinks (non-numeric names like /dev/video_side) over numeric paths
+            if existing_id.replace("/dev/video", "").isdigit() and not current_id.replace("/dev/video", "").isdigit():
+                resolved_to_camera[resolved_path] = cam
+                logger.debug(f"Replacing {existing_id} with symlink {current_id}")
+        else:
+            resolved_to_camera[resolved_path] = cam
+
+    return list(resolved_to_camera.values())
 
 
 def find_and_print_cameras(camera_type_filter: str | None = None) -> list[dict[str, Any]]:
@@ -166,6 +208,7 @@ def create_camera_instance(cam_meta: dict[str, Any]) -> dict[str, Any] | None:
             cv_config = OpenCVCameraConfig(
                 index_or_path=cam_id,
                 color_mode=ColorMode.RGB,
+                fourcc="MJPG",
             )
             instance = OpenCVCamera(cv_config)
         elif cam_type == "RealSense":
@@ -250,8 +293,12 @@ def save_images_from_all_cameras(
         logger.warning("No cameras detected matching the criteria. Cannot save images.")
         return
 
+    # Remove duplicate cameras (e.g., /dev/video0 and /dev/video_wrist pointing to same device)
+    unique_camera_metadata = deduplicate_cameras(all_camera_metadata)
+    logger.info(f"Using {len(unique_camera_metadata)} unique cameras (removed {len(all_camera_metadata) - len(unique_camera_metadata)} duplicates)")
+
     cameras_to_use = []
-    for cam_meta in all_camera_metadata:
+    for cam_meta in unique_camera_metadata:
         camera_instance = create_camera_instance(cam_meta)
         if camera_instance:
             cameras_to_use.append(camera_instance)
