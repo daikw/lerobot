@@ -195,13 +195,65 @@ def format_big_number(num, precision=0):
     return num
 
 
+def _say_aivis(text: str, blocking: bool = False):
+    """Text-to-speech using AivisSpeech API (VOICEVOX-compatible)."""
+    import tempfile
+
+    import requests
+
+    host = os.environ.get("LEROBOT_AIVIS_HOST", "http://localhost:10101")
+    speaker_id = int(os.environ.get("LEROBOT_AIVIS_SPEAKER", "888753760"))
+    audio_device = os.environ.get("LEROBOT_AUDIO_DEVICE", "default")
+    volume_scale = float(os.environ.get("LEROBOT_AIVIS_VOLUME", "2.0"))
+
+    try:
+        # Create audio query
+        query = requests.post(
+            f"{host}/audio_query", params={"text": text, "speaker": speaker_id}, timeout=10
+        ).json()
+        # Adjust volume
+        query["volumeScale"] = volume_scale
+        # Synthesize audio
+        audio = requests.post(
+            f"{host}/synthesis", params={"speaker": speaker_id}, json=query, timeout=30
+        ).content
+
+        # Save to temp file, convert to stereo, and play
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+            f.write(audio)
+            mono_path = f.name
+
+        stereo_path = mono_path.replace(".wav", "_stereo.wav")
+        # Convert mono to stereo (required for some audio devices)
+        subprocess.run(["sox", mono_path, "-c", "2", stereo_path], check=True, capture_output=True)
+
+        play_cmd = ["aplay", "-D", audio_device, stereo_path]
+        if blocking:
+            subprocess.run(play_cmd, check=False, capture_output=True)
+        else:
+            subprocess.Popen(play_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+        # Cleanup temp files (non-blocking case may still be playing)
+        if blocking:
+            os.unlink(mono_path)
+            os.unlink(stereo_path)
+    except Exception as e:
+        logging.warning(f"AivisSpeech TTS failed: {e}")
+
+
 def say(text: str, blocking: bool = False):
     system = platform.system()
+    tts_backend = os.environ.get("LEROBOT_TTS_BACKEND", "").lower()
 
     if system == "Darwin":
         cmd = ["say", text]
 
     elif system == "Linux":
+        # Use AivisSpeech if LEROBOT_TTS_BACKEND=aivis
+        if tts_backend == "aivis":
+            _say_aivis(text, blocking)
+            return
+
         cmd = ["spd-say", text]
         if blocking:
             cmd.append("--wait")
